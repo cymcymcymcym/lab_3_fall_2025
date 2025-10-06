@@ -54,7 +54,72 @@ class InverseKinematics(Node):
         ################################################################################################
         # TODO: Compute the forward kinematics for the front right leg (should be easy after lab 2!)
         ################################################################################################
-        return
+        
+        def rotation_x(angle):
+            # rotation about the x-axis implemented for you
+            return np.array(
+                [
+                    [1, 0, 0, 0],
+                    [0, np.cos(angle), -np.sin(angle), 0],
+                    [0, np.sin(angle), np.cos(angle), 0],
+                    [0, 0, 0, 1],
+                ]
+            )
+
+        def rotation_y(angle):
+            ## TODO: Implement the rotation matrix about the y-axis
+            return np.array(
+                [
+                    [np.cos(angle), 0, np.sin(angle), 0],
+                    [0, 1, 0, 0],
+                    [-np.sin(angle), 0, np.cos(angle), 0],
+                    [0, 0, 0, 1],
+                ]
+            )
+
+        def rotation_z(angle):
+            ## TODO: Implement the rotation matrix about the z-axis
+            return np.array(
+                [
+                    [np.cos(angle), -np.sin(angle), 0, 0],
+                    [np.sin(angle), np.cos(angle), 0, 0],
+                    [0, 0, 1, 0],
+                    [0, 0, 0, 1],
+                ]
+            )
+
+        def translation(x, y, z):
+            ## TODO: Implement the translation matrix
+            return np.array(
+                [
+                    [1, 0, 0, x],
+                    [0, 1, 0, y],
+                    [0, 0, 1, z],
+                    [0, 0, 0, 1],
+                ]
+            )
+
+        # T_0_1 (base_link to leg_front_l_1)
+        T_0_1 = translation(0.07500, -0.0445, 0) @ rotation_x(1.57080) @ rotation_z(theta1)
+
+        # T_1_2 (leg_front_l_1 to leg_front_l_2)
+        ## TODO: Implement the transformation matrix from leg_front_l_1 to leg_front_l_2
+        T_1_2 = translation(0, 0, 0.039) @ rotation_y(-1.57080) @ rotation_z(theta2)
+
+        # T_2_3 (leg_front_l_2 to leg_front_l_3)
+        ## TODO: Implement the transformation matrix from leg_front_l_2 to leg_front_l_3
+        T_2_3 = translation(0, -0.0494, -0.0685) @ rotation_y(-1.57080) @ rotation_z(theta3)
+
+        # T_3_ee (leg_front_l_3 to end-effector)
+        T_3_ee = translation(0.06231,-0.06216,0.018)
+
+        # TODO: Compute the final transformation. T_0_ee is the multiplication of the previous transformation matrices
+        T_0_ee = T_0_1 @ T_1_2 @ T_2_3 @ T_3_ee
+
+        # TODO: Extract the end-effector position. The end effector position is a 3x1 vector (not in homogenous coordinates)
+        end_effector_position = (T_0_ee @ np.array([0, 0, 0, 1]))[:3]
+
+        return end_effector_position
 
     def inverse_kinematics(self, target_ee, initial_guess=[0, 0, 0]):
         def cost_function(theta):
@@ -64,19 +129,28 @@ class InverseKinematics(Node):
             # TODO: Implement the cost function
             # HINT: You can use the * notation on a list to "unpack" a list
             ################################################################################################
-            return None, None
-
+            
+            pos_diff = target_ee - self.forward_kinematics(theta[0], theta[1], theta[2])
+            l1 = np.abs(pos_diff)
+            cost = np.sum(np.square(l1))
+            return cost, l1
         def gradient(theta, epsilon=1e-3):
             # Compute the gradient of the cost function using finite differences
             ################################################################################################
             # TODO: Implement the gradient computation
             ################################################################################################
-            return
+            
+            theta1_grad = self.forward_kinematics(theta[0] + epsilon, theta[1], theta[2]) - self.forward_kinematics(theta[0] - epsilon, theta[1], theta[2])
+            theta2_grad = self.forward_kinematics(theta[0], theta[1] + epsilon, theta[2]) - self.forward_kinematics(theta[0], theta[1] - epsilon, theta[2])
+            theta3_grad = self.forward_kinematics(theta[0], theta[1], theta[2] + epsilon) - self.forward_kinematics(theta[0], theta[1], theta[2] - epsilon)
+            grad = np.array([theta1_grad, theta2_grad, theta3_grad])/(2*epsilon)
+
+            return grad
 
         theta = np.array(initial_guess)
-        learning_rate = None # TODO: Set the learning rate
-        max_iterations = None # TODO: Set the maximum number of iterations
-        tolerance = None # TODO: Set the tolerance for the L1 norm of the error
+        learning_rate = 5 # TODO: Set the learning rate
+        max_iterations = 100 # TODO: Set the maximum number of iterations
+        tolerance = 0.05 # TODO: Set the tolerance for the L1 norm of the error
 
         cost_l = []
         for _ in range(max_iterations):
@@ -91,6 +165,12 @@ class InverseKinematics(Node):
 
         # print(f'Cost: {cost_l}') # Use to debug to see if you cost function converges within max_iterations
 
+            theta = theta - learning_rate * grad
+            cost, l1 = cost_function(theta)
+            cost_l.append(cost)
+            if cost < tolerance:
+                break
+
         return theta
 
     def interpolate_triangle(self, t):
@@ -99,7 +179,16 @@ class InverseKinematics(Node):
         ################################################################################################
         # TODO: Implement the interpolation function
         ################################################################################################
-        return
+        
+        triangle_positions = self.ee_triangle_positions
+        # interpolate between the three triangle positions
+        t_cycle = t- (t // 3)*3
+        if 0 <= t_cycle < 1:
+            return triangle_positions[0] + (triangle_positions[1] - triangle_positions[0])*t_cycle
+        elif 1 <= t_cycle < 2:
+            return triangle_positions[1] + (triangle_positions[2] - triangle_positions[1])*(t_cycle-1)
+        else:
+            return triangle_positions[2] + (triangle_positions[0] - triangle_positions[2])*(t_cycle-2)
 
     def ik_timer_callback(self):
         if self.joint_positions is not None:
