@@ -26,7 +26,7 @@ class InverseKinematics(Node):
         )
 
         self.pd_timer_period = 1.0 / 200  # 200 Hz
-        self.ik_timer_period = 1.0 / 20   # 10 Hz
+        self.ik_timer_period = 1.0 / 100   # 10 Hz
         self.pd_timer = self.create_timer(self.pd_timer_period, self.pd_timer_callback)
         self.ik_timer = self.create_timer(self.ik_timer_period, self.ik_timer_callback)
 
@@ -98,7 +98,7 @@ class InverseKinematics(Node):
                     [0, 0, 0, 1],
                 ]
             )
-
+        # print("theta1: ", theta1)
         # T_0_1 (base_link to leg_front_l_1)
         T_0_1 = translation(0.07500, -0.0445, 0) @ rotation_x(1.57080) @ rotation_z(theta1)
 
@@ -129,7 +129,7 @@ class InverseKinematics(Node):
             # TODO: Implement the cost function
             # HINT: You can use the * notation on a list to "unpack" a list
             ################################################################################################
-            
+            # print("theta0: ", theta)
             pos_diff = target_ee - self.forward_kinematics(theta[0], theta[1], theta[2])
             l1 = np.abs(pos_diff)
             cost = np.sum(np.square(l1))
@@ -140,17 +140,17 @@ class InverseKinematics(Node):
             # TODO: Implement the gradient computation
             ################################################################################################
             
-            theta1_grad = self.forward_kinematics(theta[0] + epsilon, theta[1], theta[2]) - self.forward_kinematics(theta[0] - epsilon, theta[1], theta[2])
-            theta2_grad = self.forward_kinematics(theta[0], theta[1] + epsilon, theta[2]) - self.forward_kinematics(theta[0], theta[1] - epsilon, theta[2])
-            theta3_grad = self.forward_kinematics(theta[0], theta[1], theta[2] + epsilon) - self.forward_kinematics(theta[0], theta[1], theta[2] - epsilon)
-            grad = np.array([theta1_grad, theta2_grad, theta3_grad])/(2*epsilon)
+            theta1_grad = cost_function([theta[0] + epsilon, theta[1], theta[2]])[0] - cost_function([theta[0] - epsilon, theta[1], theta[2]])[0]
+            theta2_grad = cost_function([theta[0], theta[1] + epsilon, theta[2]])[0] - cost_function([theta[0], theta[1] - epsilon, theta[2]])[0]
+            theta3_grad = cost_function([theta[0], theta[1], theta[2] + epsilon])[0] - cost_function([theta[0], theta[1], theta[2] - epsilon])[0]
+            grad = np.array([(theta1_grad), theta2_grad, theta3_grad])/(2*epsilon)
 
             return grad
 
         theta = np.array(initial_guess)
-        learning_rate = 5 # TODO: Set the learning rate
-        max_iterations = 100 # TODO: Set the maximum number of iterations
-        tolerance = 0.05 # TODO: Set the tolerance for the L1 norm of the error
+        learning_rate = 20 # TODO: Set the learning rate
+        max_iterations = 5 # TODO: Set the maximum number of iterations
+        tolerance = 0.02 # TODO: Set the tolerance for the L1 norm of the error
 
         cost_l = []
         for _ in range(max_iterations):
@@ -164,8 +164,9 @@ class InverseKinematics(Node):
             ################################################################################################
 
         # print(f'Cost: {cost_l}') # Use to debug to see if you cost function converges within max_iterations
-
+            # print("grad: ", grad)
             theta = theta - learning_rate * grad
+            # print("maybe: ", theta)
             cost, l1 = cost_function(theta)
             cost_l.append(cost)
             if cost < tolerance:
@@ -201,6 +202,8 @@ class InverseKinematics(Node):
             # TODO: Implement the time update
             ################################################################################################
             
+            self.t += self.ik_timer_period
+
             self.get_logger().info(f'Target EE: {target_ee}, Current EE: {current_ee}, Target Angles: {self.target_joint_positions}, Target Angles to EE: {self.forward_kinematics(*self.target_joint_positions)}, Current Angles: {self.joint_positions}')
 
     def pd_timer_callback(self):
